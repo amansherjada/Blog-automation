@@ -1048,7 +1048,7 @@ def generate_and_send_topic():
 
 if __name__ == "__main__":
     # Use PORT environment variable for Cloud Run
-    port = int(os.environ.get("PORT", 8080))
+    port = int(os.environ.get("PORT", 5000))
     
     # Run topic generation in background
     thread = threading.Thread(target=generate_and_send_topic)
