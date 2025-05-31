@@ -8,21 +8,19 @@ from dotenv import load_dotenv
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from openai import OpenAI
-from flask import Flask, request
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 import threading
 import time
 from urllib.parse import quote
 import json
-import logging
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Load environment variables from .env
+# Load environment variables
 load_dotenv()
 
-# Reference blog content
+# Get the base URL from environment variable (for cloud deployment)
+BASE_URL = os.getenv("BASE_URL", "http://localhost:5000")
+
 REFERENCE_BLOG = """
 Are Celebrities Really Using Hair Toppers? The Answer May Surprise You!
 Have you ever wondered how celebrities always seem to have perfect, voluminous hair? Whether on the red carpet, in movies, or on social media, their hair looks flawless. The truth is, many of them aren't relying on genetics alone. The secret behind their luscious hairs? Hair toppers for thinning hair.
@@ -107,7 +105,8 @@ Looking your best isn't just about vanity—it's about confidence. With natural-
 
 """
 
-# Get environment variables
+# Retrieve credentials from environment variables
+SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "service_account.json")
 DOC_ID = os.getenv("GOOGLE_DOC_ID_TOPIC")
 BLOG_PROMPT_DOC_ID = os.getenv("GOOGLE_DOC_BLOG_PROMPT_DOC_ID")
 SHEET_ID = os.getenv("GOOGLE_SHEET_ID")
@@ -123,47 +122,31 @@ RESTRICTED_DOC_ID = os.getenv("RESTRICTED_DOC_ID")
 cta_agent = os.getenv("CTA_SHEET_ID")
 PRODUCT_SHEET_ID = os.getenv("PRODUCT_SHEET_ID")
 
-# Base URL for links (Cloud Run compatible)
-BASE_URL = os.getenv("BASE_URL", "http://localhost:5000")
+# Handle service account credentials
+if os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"):
+    # If credentials are provided as JSON string (for cloud deployment)
+    creds_json = json.loads(os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"))
+    credentials = service_account.Credentials.from_service_account_info(
+        creds_json,
+        scopes=[
+            "https://www.googleapis.com/auth/documents.readonly",
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+            "https://www.googleapis.com/auth/spreadsheets.readonly"
+        ]
+    )
+else:
+    # Use file-based credentials (for local development)
+    SCOPES = [
+        "https://www.googleapis.com/auth/documents.readonly",
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+        "https://www.googleapis.com/auth/spreadsheets.readonly"
+    ]
+    credentials = service_account.Credentials.from_service_account_file(
+        SERVICE_ACCOUNT_FILE, scopes=SCOPES
+    )
 
-# Setup Google credentials for Cloud Run
-def setup_credentials():
-    """Setup Google API credentials for Cloud Run deployment"""
-    try:
-        # Try to get credentials from environment variable (JSON string)
-        credentials_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
-        if credentials_json:
-            credentials_info = json.loads(credentials_json)
-            credentials = service_account.Credentials.from_service_account_info(
-                credentials_info, scopes=SCOPES
-            )
-            logger.info("✅ Using credentials from environment variable")
-            return credentials
-        
-        # Fallback to service account file (for local development)
-        service_account_file = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-        if service_account_file and os.path.exists(service_account_file):
-            credentials = service_account.Credentials.from_service_account_file(
-                service_account_file, scopes=SCOPES
-            )
-            logger.info("✅ Using credentials from service account file")
-            return credentials
-            
-        raise ValueError("No valid Google credentials found")
-        
-    except Exception as e:
-        logger.error(f"❌ Failed to setup credentials: {e}")
-        raise
-
-SCOPES = [
-    "https://www.googleapis.com/auth/documents.readonly",
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive",
-    "https://www.googleapis.com/auth/spreadsheets.readonly"
-]
-
-# Setup credentials and services
-credentials = setup_credentials()
 docs_service = build("docs", "v1", credentials=credentials)
 drive_service = build("drive", "v3", credentials=credentials)
 sheets_service = build("sheets", "v4", credentials=credentials)
@@ -182,7 +165,7 @@ KEYWORD_SHEETS = {
 
 TARGET_AUDIENCE_DOCS = {
     "CLIP IN HAIR EXTENSIONS": "1Ly3vyL5LQIt_tidQ7KrmY5_nZNCDK9zxNK-tloGqIVQ",
-    "WIGS": "1wkhdD3tpKNNWM4oVmuAaXhNh1Hw243LrEBxuXdrGwKc",
+    "WIGS": "1wkhdT3tpKNNWM4oVmuAaXhNh1Hw243LrEBxuXdrGwKc",
     "SILK HAIR TOPPER": "1KP96hqO8rhnWq0K5t33rF5B6Vdv9VGk5Pc4_Hw8NoI4",
     "SKIN HAIR TOPPER": "1K6O0ocZWndsG9eC3A1hbpPS3hLJQrpwyFIbHuAUraQI",
     "HAIR TOPPERS": "1k1dbAKRlPwqfLSVTIIzeASXr458RB8-fx7GvwdiM8Bg",
@@ -195,11 +178,17 @@ TARGET_AUDIENCE_DOCS = {
 ALL_CATEGORIES = [k.replace('-', ' ').replace('_', ' ').lower() for k in KEYWORD_SHEETS.keys()]
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for cloud deployment
+
+# Add health check endpoint
+@app.route("/health", methods=["GET"])
+def health_check():
+    return jsonify({"status": "healthy"}), 200
 
 class PromptAgent:
     def __init__(self, doc_id):
         self.doc_id = doc_id
-        self.docs_service = build("docs", "v1", credentials=credentials)
+        self.docs_service = docs_service
 
     def fetch_prompt(self):
         document = self.docs_service.documents().get(documentId=self.doc_id).execute()
@@ -217,7 +206,7 @@ class PromptAgent:
 class AudienceAgent:
     def __init__(self, doc_id):
         self.doc_id = doc_id
-        self.docs_service = build("docs", "v1", credentials=credentials)
+        self.docs_service = docs_service
 
     def fetch_audience_text(self):
         document = self.docs_service.documents().get(documentId=self.doc_id).execute()
@@ -234,7 +223,7 @@ class AudienceAgent:
 
 class KeywordAgent:
     def __init__(self):
-        self.sheets_service = build("sheets", "v4", credentials=credentials)
+        self.sheets_service = sheets_service
 
     def get_random_keyword(self):
         categories = list(KEYWORD_SHEETS.items())
@@ -250,32 +239,32 @@ class KeywordAgent:
                     continue
                 keyword = random.choice(values)[0]
                 top_keywords = [v[0] for v in values[:5] if v]
-                logger.info(f"🔑 Random Keyword from '{matched_category}': {keyword}")
+                print(f"🔑 Random Keyword from '{matched_category}': {keyword}")
                 return keyword, matched_category, top_keywords
             except Exception as e:
-                logger.warning(f"⚠️ Skipping '{matched_category}' due to error: {e}")
+                print(f"⚠️ Skipping '{matched_category}' due to error: {e}")
         return None, None, []
 
 class ProductSheetAgent:
     def __init__(self, sheet_id):
         self.sheet_id = sheet_id
-        self.sheets_service = build("sheets", "v4", credentials=credentials)
+        self.sheets_service = sheets_service
 
     def fetch_product_text(self, category):
         try:
             result = self.sheets_service.spreadsheets().values().get(
                 spreadsheetId=self.sheet_id,
-                range="Sheet1!A:D"  # Assuming 4 columns: Category, Sub-type, Long Text, Short Text
+                range="Sheet1!A:D"
             ).execute()
 
             rows = result.get("values", [])
             category = category.upper().strip()
 
-            for row in rows[1:]:  # Skip header
+            for row in rows[1:]:
                 if row and row[0].strip().upper() == category:
-                    return row[2]  # Return the long product detail (column C)
+                    return row[2]
         except Exception as e:
-            logger.warning(f"⚠️ Could not fetch product info for category: {category} - {e}")
+            print(f"⚠️ Could not fetch product info for category: {category} - {e}")
         return ""
 
 class TopicAgent:
@@ -294,13 +283,6 @@ class TopicAgent:
         if doc_id_audience:
             audience_text = AudienceAgent(doc_id_audience).fetch_audience_text()
         
-        # Fetch product details
-        product_text = ""
-        product_agent = ProductSheetAgent(PRODUCT_SHEET_ID)
-        if category:
-            product_text = product_agent.fetch_product_text(category)
-
-        # Now fetch product text from sheet
         product_agent = ProductSheetAgent(PRODUCT_SHEET_ID)
         product_text = product_agent.fetch_product_text(category)
 
@@ -329,7 +311,7 @@ class TopicAgent:
 class GiveawayAgent:
     def __init__(self, doc_id):
         self.doc_id = doc_id
-        self.docs_service = build("docs", "v1", credentials=credentials)
+        self.docs_service = docs_service
 
     def fetch_all_giveaways(self):
         document = self.docs_service.documents().get(documentId=self.doc_id).execute()
@@ -356,19 +338,16 @@ class GiveawayAgent:
         keyword = keyword.lower()
         category = (category or "").lower()
 
-        # 1. Check for lines that include the category keyword (like "wig" or "topper")
         for line in all_giveaways:
             if category in line.lower():
-                logger.info(f"🎯 Matched category-based giveaway for: {category}")
+                print(f"🎯 Matched category-based giveaway for: {category}")
                 return line
 
-        # 2. Exact keyword match
         for line in all_giveaways:
             if keyword in line.lower():
-                logger.info("✅ Exact match giveaway selected")
+                print("✅ Exact match giveaway selected")
                 return line
 
-        # 3. Fuzzy match
         best_match = None
         best_score = 0
         for line in all_giveaways:
@@ -377,13 +356,12 @@ class GiveawayAgent:
                 best_score = score
                 best_match = line
         if best_score > 0.3:
-            logger.info(f"🤏 Fuzzy match giveaway selected (score: {best_score:.2f})")
+            print(f"🤏 Fuzzy match giveaway selected (score: {best_score:.2f})")
             return best_match
 
-        # 4. Fallback with phone number
         for line in all_giveaways:
             if "+91 9967123333" in line:
-                logger.info("📞 Fallback line with phone number used")
+                print("📞 Fallback line with phone number used")
                 return line
 
         return random.choice(all_giveaways) if all_giveaways else ""
@@ -391,7 +369,7 @@ class GiveawayAgent:
 class CTAAgent:
     def __init__(self, sheet_id):
         self.sheet_id = sheet_id
-        self.sheets_service = build("sheets", "v4", credentials=credentials)
+        self.sheets_service = sheets_service
 
     def fetch_all_ctas(self):
         result = self.sheets_service.spreadsheets().values().get(
@@ -412,14 +390,12 @@ class CTAAgent:
         category_col = 0
         option_cols = list(range(1, len(headers)))
 
-        # Try finding matching row for category
         matched_row = None
         for row in rows[1:]:
             if row and row[0].lower().strip() == category:
                 matched_row = row
                 break
 
-        # Fallback: use default row
         if not matched_row:
             for row in rows[1:]:
                 if row and row[0].lower().strip() == "default":
@@ -429,13 +405,11 @@ class CTAAgent:
         if not matched_row:
             return "👉 [Fill this quick form to get personalized guidance on your hair journey.](https://forms.gle/xdzYyJK5cH7HKEHW7)"
 
-        # Pick a non-empty Option randomly
         options = [matched_row[i] for i in option_cols if i < len(matched_row) and matched_row[i].strip()]
         if options:
             selected_cta = random.choice(options).strip()
 
             if "forms.gle" not in selected_cta:
-                # Optional: add as new line (for better formatting)
                 selected_cta += "\n\n👉 [Fill out the form and get matched.](https://forms.gle/xdzYyJK5cH7HKEHW7)"
 
             return selected_cta
@@ -445,7 +419,7 @@ class CTAAgent:
 class BlogWriterAgent:
     def __init__(self, doc_id):
         self.doc_id = doc_id
-        self.docs_service = build("docs", "v1", credentials=credentials)
+        self.docs_service = docs_service
 
     def fetch_blog_prompt(self):
         document = self.docs_service.documents().get(documentId=self.doc_id).execute()
@@ -462,7 +436,6 @@ class BlogWriterAgent:
 
     def generate_blog(self, title, keyword, extra_keywords, category=None):
         prompt = self.fetch_blog_prompt()
-        # Fetch audience insights
         audience_text = ""
         doc_id_audience = TARGET_AUDIENCE_DOCS.get(category.upper()) if category else None
         if doc_id_audience:
@@ -520,7 +493,6 @@ This ensures short TOC + long SEO-friendly blog headers.
 
 """
 
-        # Retry logic for length
         for _ in range(3):
             response = OpenAI(api_key=OPENAI_API_KEY).chat.completions.create(
                 model="gpt-4o",
@@ -530,7 +502,7 @@ This ensures short TOC + long SEO-friendly blog headers.
                         "content": (
                             "You're a professional blog writer. "
                             "Use the Product Details section inside the blog where relevant to explain features, benefits, or help the user make decisions.\n\n"
-                            f"{rules_text}"  # Put rules here
+                            f"{rules_text}"
                         )
                     },
                     {"role": "user", "content": final_prompt}
@@ -542,21 +514,18 @@ This ensures short TOC + long SEO-friendly blog headers.
             if len(blog_content) >= 9000 and len(blog_content.split()) >= 1500:
                 break
             else:
-                logger.warning(f"⚠️ Blog too short: {len(blog_content.split())} words, {len(blog_content)} characters. Retrying...")
+                print(f"⚠️ Blog too short: {len(blog_content.split())} words, {len(blog_content)} characters. Retrying...")
 
-        # Append a relevant giveaway
         giveaway_line = giveaway_agent.select_relevant_giveaway(keyword, category)
         if giveaway_line:
             blog_content += f"\n\n{giveaway_line.strip()}"
         
-        # Normalize the category before using it to fetch CTA
         normalized_category = category.replace("-", " ").replace("_", " ").lower() if category else None
         cta_line = cta_agent.select_cta(normalized_category)
 
         if cta_line:
             blog_content += f"\n{cta_line.strip()}"
         
-        # Apply restricted word filtering
         blog_content = restricted_agent.filter_content(blog_content)
 
         return blog_content
@@ -568,15 +537,12 @@ class GavariAgent:
         self.email_agent = email_agent
 
     def send_blog_to_gavari(self, title, content, keyword, category):
-        # 1. Create Google Doc
         doc_metadata = {'title': title}
         doc = self.docs_service.documents().create(body=doc_metadata).execute()
         doc_id = doc['documentId']
 
-        # 2. Insert blog content with proper formatting
         requests = []
     
-        # Add title with heading formatting
         requests.append({
             'insertText': {
                 'location': {'index': 1},
@@ -584,7 +550,6 @@ class GavariAgent:
             }
         })
     
-        # Format the title as Heading 1
         requests.append({
             'updateParagraphStyle': {
                 'range': {
@@ -598,15 +563,13 @@ class GavariAgent:
             }
         })
     
-        # Process the content to identify headers and lists
         lines = content.split('\n')
-        current_index = len(title) + 2  # Start after title and two newlines
+        current_index = len(title) + 2
     
         for line in lines:
             line_text = line + "\n"
             line_length = len(line_text)
         
-            # Insert the text line
             requests.append({
                 'insertText': {
                     'location': {'index': current_index},
@@ -614,9 +577,7 @@ class GavariAgent:
                 }
             })
         
-            # Format headers
             if line.startswith('**') and line.endswith('**'):
-                # This is a header (remove the ** markers)
                 header_text = line.strip('*').strip()
                 requests.append({
                     'updateParagraphStyle': {
@@ -631,7 +592,6 @@ class GavariAgent:
                     }
                 })
         
-            # Format bullet points
             elif line.strip().startswith('- '):
                 requests.append({
                     'createParagraphBullets': {
@@ -640,10 +600,10 @@ class GavariAgent:
                             'endIndex': current_index + line_length - 1
                         },
                         'bulletPreset': 'BULLET_DISC_CIRCLE_SQUARE'
+
                     }
                 })
         
-            # Format numbered lists
             elif re.match(r'^\d+\.\s', line.strip()):
                 requests.append({
                     'createParagraphBullets': {
@@ -652,15 +612,14 @@ class GavariAgent:
                             'endIndex': current_index + line_length - 1
                         },
                         'bulletPreset': 'NUMBERED_DECIMAL_ALPHA_ROMAN'
+
                     }
                 })
         
             current_index += line_length
     
-        # Execute all formatting requests
         self.docs_service.documents().batchUpdate(documentId=doc_id, body={'requests': requests}).execute()
 
-        # 3. Share the document with Gauri Mam (edit access)
         self.drive_service.permissions().create(
             fileId=doc_id,
             body={
@@ -671,13 +630,11 @@ class GavariAgent:
             fields='id'
         ).execute()
 
-        # 4. Send email to Gauri mam
         subject = f"Approved Blog for Review: {title}"
         encoded_title = quote(title.replace('"', ''))
         encoded_keyword = quote(keyword)
         encoded_category = quote(category)
 
-        # Use BASE_URL instead of hardcoded localhost
         approval_link = f"{BASE_URL}/approve-gavari?topic={encoded_title}&category={encoded_category}&keyword={encoded_keyword}"
         reject_link = f"{BASE_URL}/reject-gavari?topic={encoded_title}&category={encoded_category}&keyword={encoded_keyword}"
 
@@ -699,7 +656,7 @@ class GavariAgent:
 
 class SheetAgent:
     def __init__(self):
-        self.sheets_service = build("sheets", "v4", credentials=credentials)
+        self.sheets_service = sheets_service
 
     def get_all_topics(self):
         sheet = self.sheets_service.spreadsheets().values().get(
@@ -726,13 +683,13 @@ class SheetAgent:
                     valueInputOption="RAW",
                     body={"values": [[new_status]]}
                 ).execute()
-                logger.info(f"🔄 Updated status of '{topic}' to '{new_status}'")
+                print(f"🔄 Updated status of '{topic}' to '{new_status}'")
                 break
 
     def add_blog_entry(self, topic, keyword, category, extra_keywords, status="Generated"):
         if self.topic_exists(topic):
-            logger.warning(f"🚫 Skipping duplicate topic: {topic}")
-            return False  # Don't add if already exists
+            print(f"🚫 Skipping duplicate topic: {topic}")
+            return False
 
         values = [[
             topic,
@@ -740,7 +697,7 @@ class SheetAgent:
             category,
             status,
             str(__import__('datetime').datetime.now().date()),
-            "Generated",  # Column F: Content_Status
+            "Generated",
             ", ".join(extra_keywords)
         ]]
         body = {"values": values}
@@ -750,7 +707,7 @@ class SheetAgent:
             valueInputOption="RAW",
             body=body
         ).execute()
-        logger.info(f"✅ Blog entry added to sheet: {topic}")
+        print(f"✅ Blog entry added to sheet: {topic}")
         return True
 
     def get_topic_data(self, topic):
@@ -778,9 +735,9 @@ class EmailAgent:
             with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
                 server.login(FROM_EMAIL, EMAIL_APP_PASSWORD)
                 server.sendmail(FROM_EMAIL, to_email, msg.as_string())
-            logger.info(f"✅ Email sent to {to_email}")
+            print(f"✅ Email sent to {to_email}")
         except Exception as e:
-            logger.error(f"❌ Failed to send email: {str(e)}")
+            print("❌ Failed to send email:", str(e))
 
 class DriveAgent:
     def __init__(self, drive_service, parent_folder_id):
@@ -800,7 +757,7 @@ class DriveAgent:
         self.drive_service.files().update(
             fileId=doc_id,
             addParents=folder_id,
-            removeParents='root',  # Optional: remove from root
+            removeParents='root',
             fields='id, parents'
         ).execute()
 
@@ -815,7 +772,7 @@ class DriveAgent:
 class RestrictedWordAgent:
     def __init__(self, doc_id):
         self.doc_id = doc_id
-        self.docs_service = build("docs", "v1", credentials=credentials)
+        self.docs_service = docs_service
 
     def fetch_rules_as_text(self):
         document = self.docs_service.documents().get(documentId=self.doc_id).execute()
@@ -846,7 +803,7 @@ class RestrictedWordAgent:
             try:
                 content = re.sub(pattern, '', content, flags=re.IGNORECASE)
             except re.error as e:
-                logger.warning(f"⚠️ Invalid regex pattern: {pattern} – {e}")
+                print(f"⚠️ Invalid regex pattern: {pattern} – {e}")
     
         return content
 
@@ -856,16 +813,11 @@ email_agent = EmailAgent()
 blog_writer = BlogWriterAgent(BLOG_PROMPT_DOC_ID)
 gavari_agent = GavariAgent(docs_service, drive_service, email_agent)
 drive_agent = DriveAgent(drive_service, APPROVED_BLOGS_FOLDER_ID)
-giveaway_agent = GiveawayAgent(os.getenv("GIVEAWAY_DOC_ID"))
+giveaway_agent = GiveawayAgent(GIVEAWAY_DOC_ID)
 restricted_agent = RestrictedWordAgent(RESTRICTED_DOC_ID)
+cta_agent = CTAAgent(cta_agent)
 
 topic_context = {}
-
-# Health check endpoint for Cloud Run
-@app.route("/", methods=["GET"])
-def health_check():
-    """Health check endpoint for Cloud Run"""
-    return {"status": "healthy", "message": "Blog automation service is running"}, 200
 
 @app.route("/approve", methods=["GET"])
 def approve_topic():
@@ -918,7 +870,7 @@ def reject_topic():
                 spreadsheetId=SHEET_ID,
                 range=f"Sheet1!A{i+1}:E{i+1}"
             ).execute()
-            logger.info(f"🗑️ Deleted row for topic: {topic}")
+            print(f"🗑️ Deleted row for topic: {topic}")
             break
 
     return f"""
@@ -938,20 +890,14 @@ def approve_gavari():
     if not topic or not category or not keyword:
         return "Missing topic, keyword, or category", 400
 
-    # 1. Find the doc in Drive by title
     doc_id = drive_agent.get_doc_id_by_title(topic)
     if doc_id:
-        # 2. Create a folder inside the main approved blogs folder
         blog_folder_id = drive_agent.create_blog_folder(topic)
-
-        # 3. Move the blog doc into that folder
         drive_agent.move_doc_to_folder(doc_id, blog_folder_id)
 
-        # 4. Update status in Column D with link
         folder_link = f"https://drive.google.com/drive/folders/{blog_folder_id}"
         sheet_agent.update_blog_status(topic, f"Approved ✅ - {folder_link}")
 
-        # 5. Update Content_Status in Column F
         sheet_data = sheet_agent.sheets_service.spreadsheets().values().get(
             spreadsheetId=SHEET_ID,
             range="Sheet1!A:A"
@@ -973,11 +919,11 @@ def approve_gavari():
                 valueInputOption="RAW",
                 body={"values": [["Approved by Gauri ✅"]]}
             ).execute()
-            logger.info(f"🟢 Content_Status updated for topic: {topic}")
+            print(f"🟢 Content_Status updated for topic: {topic}")
         else:
-            logger.warning(f"⚠️ Could not find topic in sheet for updating Content_Status: {topic}")
+            print(f"⚠️ Could not find topic in sheet for updating Content_Status: {topic}")
     else:
-        logger.error("❌ Could not find doc to move.")
+        print("❌ Could not find doc to move.")
 
     return f"<p>✅ Approved by Gauri. Blog stored in Drive and status updated.</p>"
 
@@ -986,30 +932,27 @@ def reject_topic_gavari():
     topic = request.args.get("topic")
     keyword = request.args.get("keyword")
     category = request.args.get("category")
-    
+
     if not topic or not keyword or not category:
         return "Missing topic, keyword, or category", 400
 
     extra_keywords = topic_context.get(topic, {}).get("extra_keywords", [])
-
-    # Re-generate the blog
     blog_content = blog_writer.generate_blog(topic, keyword, extra_keywords, category)
-
-    # Pass all 4 arguments now
     gavari_agent.send_blog_to_gavari(topic, blog_content, keyword, category)
 
     return f"""
     <p>🔁 A new version of the blog for '<strong>{topic}</strong>' has been generated and sent to Gauri Mam.</p>
     """
 
+# Background task for generating topics
+generation_enabled = os.getenv("ENABLE_AUTO_GENERATION", "true").lower() == "true"
+
 def generate_and_send_topic():
-    """Background task for generating topics"""
-    while True:
+    while generation_enabled:
         try:
             prompt_agent = PromptAgent(DOC_ID)
             keyword_agent = KeywordAgent()
             topic_agent = TopicAgent(OPENAI_API_KEY)
-            cta_agent = CTAAgent(os.getenv("CTA_SHEET_ID"))
 
             prompt_text = prompt_agent.fetch_prompt()
             if prompt_text:
@@ -1017,14 +960,13 @@ def generate_and_send_topic():
                 topic = topic_agent.generate_topic(prompt_text, keyword or "", matched_category)
 
                 if sheet_agent.topic_exists(topic):
-                    logger.warning(f"⚠️ Duplicate topic skipped: {topic}")
-                    continue  # don't generate email or blog if already exists
+                    print(f"⚠️ Duplicate topic skipped: {topic}")
+                    continue
 
                 success = sheet_agent.add_blog_entry(topic, keyword, matched_category, extra_keywords)
                 if not success:
                     continue
 
-                # Send approval email using BASE_URL
                 approval_link = f"{BASE_URL}/approve?topic={quote(topic)}"
                 reject_link = f"{BASE_URL}/reject?topic={quote(topic)}"
 
@@ -1038,22 +980,21 @@ def generate_and_send_topic():
                 """
 
                 email_agent.send_email(HEAD_EMAIL, "Approval Needed: Blog Topic", approval_body)
-                logger.info(f"📬 Blog topic sent for approval: {topic}")
+                print(f"📬 Blog topic sent for approval: {topic}")
             else:
-                logger.warning("⚠️ No prompt found in Google Doc.")
+                print("⚠️ No prompt found in Google Doc.")
         except Exception as e:
-            logger.error(f"🔥 Error generating topic: {str(e)}")
+            print("🔥 Error generating topic:", str(e))
 
-        time.sleep(60)
+        time.sleep(int(os.getenv("GENERATION_INTERVAL", "60")))
 
 if __name__ == "__main__":
-    # Use PORT environment variable for Cloud Run
-    port = int(os.environ.get("PORT", 5000))
-    
-    # Run topic generation in background
-    thread = threading.Thread(target=generate_and_send_topic)
-    thread.daemon = True
-    thread.start()
+    # Start background thread for topic generation
+    if generation_enabled:
+        thread = threading.Thread(target=generate_and_send_topic)
+        thread.daemon = True
+        thread.start()
 
-    # Start Flask app - bind to 0.0.0.0 for Cloud Run
-    app.run(host="0.0.0.0", port=port, debug=False)
+    # Run Flask app
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port, debug=False)
