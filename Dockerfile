@@ -24,11 +24,11 @@ RUN useradd --create-home --shell /bin/bash app \
 USER app
 
 # Expose port
-EXPOSE 8080
+EXPOSE 5000
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
-ENV PORT=8080
+ENV PORT=5000
 
 # Run the application
 CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 main:app
