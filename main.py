@@ -962,41 +962,28 @@ topic_context = {}
 
 @app.route("/approve", methods=["GET"])
 def approve_topic():
-    try:
-        topic = request.args.get("topic")
-        if not topic:
-            return "Missing topic", 400
+    topic_data = request.args.get("topic")
+    status = request.args.get("status", "approved")  # default to 'approved'
 
-        keyword, category, extra_keywords = sheet_agent.get_topic_data(topic)
+    print(f"🟢 Approve route triggered | topic={topic_data} | status={status}")
 
-        if not keyword or not category:
-            return "Missing keyword or category in sheet", 400
+    if status == "approved":
+        print("✅ Status is approved. Generating blog...")
+        blog_content = generate_blog(topic_data)
+        print("📝 Blog content generated.")
 
-        extra_keywords = topic_context.get(topic, {}).get("extra_keywords", extra_keywords)
-        blog_content = blog_writer.generate_blog(topic, keyword, extra_keywords, category)
+        print("📤 Uploading blog content to Google Drive...")
+        upload_to_drive(blog_content, topic_data)
+        print("✅ Uploaded to Drive.")
 
-        gavari_agent.send_blog_to_gavari(topic, blog_content, keyword, category)
+        print("📨 Sending email to reviewer...")
+        send_email_to_reviewer(topic_data, blog_content)
+        print("✅ Email sent.")
+    else:
+        print("⚠️ Status is not approved. Blog will not be generated.")
 
-        sheet_agent.update_blog_status(topic, "Approved")
+    return jsonify({"message": "Approved successfully", "topic": topic_data})
 
-        subject = "Approved Blog Topic - Proceed with Thumbnail"
-        body = f"""
-        <p>The following blog topic has been approved:</p>
-        <h3>{topic}</h3>
-        <p><strong>Category:</strong> {category}</p>
-        <p>Please check the tracker sheet for details.</p>
-        <p>💾 Shared Google Drive Folder (for graphics):<br>
-        <a href="https://drive.google.com/drive/folders/1pmHyrIZsXO7TpcvUnRsAoMZSEX1LXgXH?usp=sharing" target="_blank">
-        https://drive.google.com/drive/folders/1pmHyrIZsXO7TpcvUnRsAoMZSEX1LXgXH?usp=sharing
-        </a></p>
-        """
-
-        email_agent.send_email(DESIGNER_EMAIL, subject, body)
-
-        return f"✅ Blog approved and email sent to designer for topic: {topic}"
-    except Exception as e:
-        print(f"❌ Error in approve_topic: {e}")
-        return f"Error approving topic: {str(e)}", 500
 
 @app.route("/reject", methods=["GET"])
 def reject_topic():
