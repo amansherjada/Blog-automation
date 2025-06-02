@@ -1,3 +1,4 @@
+def generate_and_process_blog():
 import os
 import re
 import base64
