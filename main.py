@@ -8,10 +8,13 @@ from dotenv import load_dotenv
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from openai import OpenAI
+from flask import Flask, request
+import threading
 import time
 from urllib.parse import quote
 
-# Load environment variables from .env (or Cloud Run env)
+
+# Load environment variables from .env
 load_dotenv()
 REFERENCE_BLOG = """
 Are Celebrities Really Using Hair Toppers? The Answer May Surprise You!
@@ -96,6 +99,7 @@ Looking your best isn’t just about vanity—it’s about confidence. With natu
 
 
 """
+
 # Retrieve credentials from environment variables
 SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 DOC_ID = os.getenv("GOOGLE_DOC_ID_TOPIC")
@@ -812,38 +816,210 @@ class RestrictedWordAgent:
                 print(f"⚠️ Invalid regex pattern: {pattern} – {e}")
     
         return content
-# ... (all your constants and class definitions remain unchanged)
-# Paste all your class definitions here (PromptAgent, AudienceAgent, KeywordAgent, etc.)
-# For brevity, not repeating the entire class code here; use your original code.
 
-def main():
-    # Instantiate your agents
-    topic_agent = TopicAgent(OPENAI_API_KEY)
-    keyword_agent = KeywordAgent()
-    blog_writer = BlogWriterAgent(BLOG_PROMPT_DOC_ID)
-    giveaway_agent = GiveawayAgent(GIVEAWAY_DOC_ID)
-    cta_agent = CTAAgent(CTA_SHEET_ID)
-    restricted_agent = RestrictedWordAgent(RESTRICTED_DOC_ID)
-    email_agent = EmailAgent()
-    gavari_agent = GavariAgent(docs_service, drive_service, email_agent)
+sheet_agent = SheetAgent()
+email_agent = EmailAgent()
+blog_writer = BlogWriterAgent(BLOG_PROMPT_DOC_ID)
+gavari_agent = GavariAgent(docs_service, drive_service, email_agent)
+drive_agent = DriveAgent(drive_service, APPROVED_BLOGS_FOLDER_ID)
+giveaway_agent = GiveawayAgent(os.getenv("GIVEAWAY_DOC_ID"))
+restricted_agent = RestrictedWordAgent(RESTRICTED_DOC_ID)
 
-    # Generate keyword, category, and topic
-    keyword, matched_category, extra_keywords = keyword_agent.get_random_keyword()
-    if not keyword or not matched_category:
-        print("No keyword/category found. Exiting.")
-        return
+topic_context = {}
 
-    prompt = PromptAgent(DOC_ID).fetch_prompt()
-    topic = topic_agent.generate_topic(prompt, keyword, matched_category)
-    print(f"Generated topic: {topic}")
+@app.route("/approve", methods=["GET"])
+def approve_topic():
+    topic = request.args.get("topic")
+    if not topic:
+        return "Missing topic", 400
 
-    # Write the blog
-    blog_content = blog_writer.generate_blog(topic, keyword, extra_keywords, matched_category)
-    print(f"Generated blog content of length {len(blog_content)}")
+    keyword, category, extra_keywords = sheet_agent.get_topic_data(topic)
 
-    # Send to Gavari
-    gavari_agent.send_blog_to_gavari(topic, blog_content, keyword, matched_category)
-    print("Blog sent to Gavari.")
+    if not keyword or not category:
+        return "Missing keyword or category in sheet", 400
+
+
+    extra_keywords = topic_context.get(topic, {}).get("extra_keywords", [])
+    blog_content = blog_writer.generate_blog(topic, keyword, extra_keywords, category)
+
+    gavari_agent.send_blog_to_gavari(topic, blog_content, keyword, category)
+
+
+
+    sheet_agent.update_blog_status(topic, "Approved")
+
+    subject = "Approved Blog Topic - Proceed with Thumbnail"
+    body = f"""
+    <p>The following blog topic has been approved:</p>
+    <h3>{topic}</h3>
+    <p><strong>Category:</strong> {category}</p>
+    <p>Please check the tracker sheet for details.</p>
+    <p>💾 Shared Google Drive Folder (for graphics):<br>
+    <a href="https://drive.google.com/drive/folders/1pmHyrIZsXO7TpcvUnRsAoMZSEX1LXgXH?usp=sharing" target="_blank">
+    https://drive.google.com/drive/folders/1pmHyrIZsXO7TpcvUnRsAoMZSEX1LXgXH?usp=sharing
+    </a></p>
+    """
+
+    email_agent.send_email(DESIGNER_EMAIL, subject, body)
+
+    return f"✅ Blog approved and email sent to designer for topic: {topic}"
+
+@app.route("/reject", methods=["GET"])
+def reject_topic():
+    topic = request.args.get("topic")
+    if not topic:
+        return "Missing topic", 400
+
+    sheet = sheet_agent.sheets_service.spreadsheets().values().get(
+        spreadsheetId=SHEET_ID,
+        range="Sheet1!A:E"
+    ).execute()
+    rows = sheet.get("values", [])
+    for i, row in enumerate(rows):
+        if row and row[0] == topic:
+            sheet_agent.sheets_service.spreadsheets().values().clear(
+                spreadsheetId=SHEET_ID,
+                range=f"Sheet1!A{i+1}:E{i+1}"
+            ).execute()
+            print(f"🗑️ Deleted row for topic: {topic}")
+            break
+
+    return f"""
+    <p>🗑️ Topic '<strong>{topic}</strong>' rejected and removed from sheet.</p>
+    <script>
+        const approveBtn = document.querySelector('a[href*="approve"]');
+        if (approveBtn) approveBtn.style.display = 'none';
+    </script>
+"""
+@app.route("/approve-gavari", methods=["GET"])
+def approve_gavari():
+    topic = request.args.get("topic")
+    category = request.args.get("category")
+    keyword = request.args.get("keyword")
+
+    if not topic or not category or not keyword:
+        return "Missing topic, keyword, or category", 400
+
+    # 1. Find the doc in Drive by title
+    doc_id = drive_agent.get_doc_id_by_title(topic)
+    if doc_id:
+        # 2. Create a folder inside the main approved blogs folder
+        blog_folder_id = drive_agent.create_blog_folder(topic)
+
+        # 3. Move the blog doc into that folder
+        drive_agent.move_doc_to_folder(doc_id, blog_folder_id)
+
+        # 4. Update status in Column D with link
+        folder_link = f"https://drive.google.com/drive/folders/{blog_folder_id}"
+        sheet_agent.update_blog_status(topic, f"Approved ✅ - {folder_link}")
+
+        # ✅ 5. Update Content_Status in Column F
+        sheet_data = sheet_agent.sheets_service.spreadsheets().values().get(
+            spreadsheetId=SHEET_ID,
+            range="Sheet1!A:A"
+        ).execute()
+        rows = sheet_data.get("values", [])
+
+        cleaned_topic = topic.strip().lower().replace('"', '')
+        row_number = None
+
+        for i, row in enumerate(rows):
+            if row and row[0].strip().lower().replace('"', '') == cleaned_topic:
+                row_number = i + 1
+                break
+
+        if row_number:
+            sheet_agent.sheets_service.spreadsheets().values().update(
+                spreadsheetId=SHEET_ID,
+                range=f"Sheet1!F{row_number}",
+                valueInputOption="RAW",
+                body={"values": [["Approved by Gauri ✅"]]}
+            ).execute()
+            print(f"🟢 Content_Status updated for topic: {topic}")
+        else:
+            print(f"⚠️ Could not find topic in sheet for updating Content_Status: {topic}")
+    else:
+        print("❌ Could not find doc to move.")
+
+    return f"<p>✅ Approved by Gauri. Blog stored in Drive and status updated.</p>"
+
+
+@app.route("/reject-gavari", methods=["GET"])
+def reject_topic_gavari():
+    topic = request.args.get("topic")
+    keyword = request.args.get("keyword")
+    category = request.args.get("category")
+    
+
+    if not topic or not keyword or not category:
+        return "Missing topic, keyword, or category", 400
+
+    extra_keywords = topic_context.get(topic, {}).get("extra_keywords", [])
+
+    # Re-generate the blog
+    blog_content = blog_writer.generate_blog(topic, keyword, extra_keywords, category)
+
+
+    # ✅ Fixed: Pass all 4 arguments now
+    gavari_agent.send_blog_to_gavari(topic, blog_content, keyword, category)
+
+    return f"""
+    <p>🔁 A new version of the blog for '<strong>{topic}</strong>' has been generated and sent to Gauri Mam.</p>
+    """
 
 if __name__ == "__main__":
-    main()
+    prompt_agent = PromptAgent(DOC_ID)
+    keyword_agent = KeywordAgent()
+    topic_agent = TopicAgent(OPENAI_API_KEY)
+    cta_agent = CTAAgent(os.getenv("CTA_SHEET_ID"))
+
+
+    
+
+    def generate_and_send_topic():
+        while True:
+            try:
+                prompt_text = prompt_agent.fetch_prompt()
+                if prompt_text:
+                    keyword, matched_category, extra_keywords = keyword_agent.get_random_keyword()
+                    topic = topic_agent.generate_topic(prompt_text, keyword or "", matched_category)
+
+
+                    if sheet_agent.topic_exists(topic):
+                        print(f"⚠️ Duplicate topic skipped: {topic}")
+                        continue  # don’t generate email or blog if already exists
+
+                    success = sheet_agent.add_blog_entry(topic, keyword, matched_category, extra_keywords)
+                    if not success:
+                        continue
+
+                    # Send approval email
+                    approval_link = f"http://localhost:5000/approve?topic={quote(topic)}"
+                    reject_link = f"http://localhost:5000/reject?topic={quote(topic)}"
+
+                    approval_body = f"""
+                    <p>New blog topic generated. Please review:</p>
+                    <h3>{topic}</h3>
+                    <p>Keyword: {keyword}</p>
+                    <p>Category: {matched_category}</p>
+                    <a href='{approval_link}' style='padding:10px;background:#2e86de;color:white;text-decoration:none;margin-right:10px;'>✅ Approve</a>
+                    <a href='{reject_link}' style='padding:10px;background:#e74c3c;color:white;text-decoration:none;'>❌ Reject</a>
+                    """
+
+                    email_agent.send_email(HEAD_EMAIL, "Approval Needed: Blog Topic", approval_body)
+                    print(f"📬 Blog topic sent for approval: {topic}")
+                else:
+                    print("⚠️ No prompt found in Google Doc.")
+            except Exception as e:
+                print("🔥 Error generating topic:", str(e))
+
+            time.sleep(60)
+
+
+    # Run topic generation in background
+    thread = threading.Thread(target=generate_and_send_topic)
+    thread.daemon = True
+    thread.start()
+
+    # Start Flask app
+    app.run(debug=False, port=5000)
