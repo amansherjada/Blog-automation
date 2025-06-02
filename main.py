@@ -8,105 +8,19 @@ from dotenv import load_dotenv
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from openai import OpenAI
-from flask import Flask, request
-import threading
-import time
 from urllib.parse import quote
+import time
 
-
-# Load environment variables from .env
+# Load environment variables
 load_dotenv()
-REFERENCE_BLOG = """
-Are Celebrities Really Using Hair Toppers? The Answer May Surprise You!
-Have you ever wondered how celebrities always seem to have perfect, voluminous hair? Whether on the red carpet, in movies, or on social media, their hair looks flawless. The truth is, many of them aren’t relying on genetics alone. The secret behind their luscious hairs? Hair toppers for thinning hair.
-While most people associate hair extensions for women with length and volume, hair toppers specifically target thinning areas on the top and crown of the head. And guess what? Some of the most famous names in Hollywood and Bollywood swear by them. But why do they use them, and how do they achieve such natural results? Let’s dive in.
-Table of Contents
-Why Celebs Use Hair Toppers
-Science Behind Toppers for Thinning Hair
-Secrets to a Seamless Celebrity Look
-Can You Get Similar Results?
-Achieving the Celebrity Look
-Choosing the Best Toppers for Women
-Why Do Celebrities Use Hair Toppers?
-Many A-list celebrities, including actresses, models, and influencers, struggle with hair loss due to constant styling, heat exposure, and stress. Even though they have access to the best hair treatments, they often turn to human hair toppers to maintain a consistently flawless look.
-Reasons Celebrities Opt for Hair Toppers:
-Damage from Styling – Frequent blow-drying, coloring, and chemical treatments take a toll on natural hair.
-Camera-Ready Volume – Thin or flat hair doesn’t photograph well, and hair toppers for volume solve that instantly.
-Age-Related Thinning – Many celebrities experience hair thinning as they age, just like millions of women worldwide.
-Medical Conditions – Some stars suffer from conditions like alopecia or stress-related hair loss and use hair toppers for alopecia as a discreet solution.
-Undetectable Enhancement – Today’s seamless hair toppers blend so well with natural hair that even HD cameras can’t detect them.
-The Science Behind Hair Toppers for Thinning Hair
-Hair toppers are a revolutionary solution for women experiencing hair thinning, hair loss, or reduced volume. They are designed to integrate seamlessly with natural hair, enhancing fullness while maintaining a lightweight and comfortable feel. Many women prefer them because they provide targeted coverage without requiring a complete transformation, making them a discreet yet effective option.
-The technology behind modern hair toppers for thinning hair has advanced significantly. High-quality toppers are made with 100% human hair, ensuring a natural texture and realistic movement. The bases are crafted with materials that mimic the scalp, creating a flawless blend with existing hair. These toppers offer a non-invasive way to regain volume and confidence, making them a preferred choice for those who want an effortless, natural-looking solution.
-Key Features of High-Quality Hair Toppers
-100% Human Hair – The best hair toppers for women are crafted from real human hair, allowing them to be styled, washed, and treated just like natural hair.
 
-
-Lightweight Construction – Lightweight hair toppers provide all-day comfort, ensuring they do not add excessive weight or strain to existing hair.
-
-
-Scalp-Like Bases – Advanced silk hair toppers and skin hair toppers replicate the natural scalp, making the parting and hairline appear seamless.
-
-
-Custom Fit – Custom hair toppers are designed to match different hair colors, textures, and densities, ensuring a perfect and undetectable blend.
-
-
-By choosing the right hair topper, women can achieve a fuller, more youthful look while preserving the health of their natural hair. Whether the goal is to add volume, cover thinning areas, or boost confidence, a high-quality topper can make a remarkable difference.
-How Celebrities Achieve a Seamless Look
-The key to a natural-looking hair topper lies in how well it blends with natural hair. Celebrities achieve this through:
-1. Choosing the Right Type
-Silk Base Hair Toppers – Look ultra-realistic and give the appearance of a natural scalp.
-Skin Hair Toppers – Blend well for a nearly invisible hairline.
-Clip-In Hair Toppers – Ideal for quick, temporary volume without commitment.
-2. Perfect Color Matching
-Professional colorists ensure the best hair toppers for women match the root shade and undertones perfectly.
-3. Expert Styling
-Celebrity hair stylists trim and layer hair toppers for volume to integrate seamlessly with natural hair.
-4. Secure Yet Comfortable Attachment
-Using easy-to-wear hair toppers with hidden clips ensures a firm hold without discomfort.
-Can You Get the Same Results?
-Absolutely. The beauty of natural-looking hair toppers is that they are not just for celebrities. With the right product and a few styling tricks, you can achieve the same flawless look in your daily life. Today’s human hair toppers are designed to blend seamlessly, offering a natural appearance that even up-close scrutiny won’t reveal. Unlike full wigs, toppers integrate with your own hair, enhancing volume and covering thinning areas without looking artificial.
-One of the biggest advantages of high-quality hair toppers is their scalp-like base, which makes them virtually undetectable. Options like silk hair toppers and skin hair toppers mimic the natural scalp, ensuring that your parting looks real. Many worry about comfort, but modern lightweight hair toppers are designed for all-day wear without causing strain or irritation. With proper attachment methods, such as clip-in hair toppers, you can confidently go about your day without worrying about shifting or discomfort.
-Whether you have crown thinning, general hair loss, or alopecia, the right hair topper can help you reclaim your confidence. Celebrities rely on expert stylists, but with a little practice, you can achieve a salon-worthy look at home. Choosing a topper that matches your hair color and texture, along with some light styling, can give you the same polished, voluminous hair seen on the red carpet.
-How to Achieve a Celebrity-Like Look with Hair Toppers
-Invest in a High-Quality Hair Topper: The key to a seamless look is choosing 100% human hair toppers, as they blend better and allow for heat styling.
-Get a Professional Color Match: A perfect match with your natural hair color ensures that the topper looks undetectable.
-Customize Your Topper: Just like celebrities, you can take your hair topper to a stylist for a custom cut and layering to blend with your hair.
-Use the Right Attachment Method: Ensure a secure and comfortable fit with clip-in hair toppers or tape-in hair toppers, depending on your lifestyle.
-Style Like a Pro: Blow-drying, curling, or straightening your topper along with your natural hair helps in achieving a natural, voluminous look.
-Regular Maintenance: Keeping your topper clean, conditioned, and tangle-free will help maintain its natural shine and softness for long-term use.
-With the right approach, anyone can achieve that red-carpet-ready hair, boosting confidence and enhancing their overall appearance.
-Choosing the Best Hair Toppers for Women
-If you are struggling with thinning hair and looking for a confidence-boosting solution, investing in a high-quality hair topper can be life-changing. Here are the top factors to consider:
-1. Hair Type
-100% Human Hair – Offers the most natural look and can be heat-styled.
-Synthetic Hair – Budget-friendly but lacks a realistic feel.
-2. Base Construction
-Silk Hair Toppers – Give a scalp-like illusion and look completely natural.
-Skin Hair Toppers – Perfect for creating an undetectable hairline.
-3. Attachment Method
-Clip-In Hair Toppers – Easy to wear and remove daily.
-Tape-In Hair Toppers – More secure for long-term use.
-4. Volume Needs
-Hair toppers for crown thinning – Ideal for localized volume at the crown.
-Hair toppers for alopecia – Designed for widespread thinning.
-5. Lifestyle Compatibility
-Easy-to-wear hair toppers – Perfect for daily use without hassle.
-Custom hair toppers – Designed for those who want a tailored fit.
-Conclusion: Embrace Confidence with Natural-Looking Hair Toppers
-Celebrities have long known the power of hair toppers for thinning hair, and now, this secret is available to everyone. Whether you’re looking for clip-in hair toppers for a quick fix or custom hair toppers for a long-term solution, there are options for every woman.
-Looking your best isn’t just about vanity—it’s about confidence. With natural-looking hair toppers, you can step out feeling self-assured, knowing your hair looks just as glamorous as any celebrities. Why wait? Explore the best options and rediscover the beauty of full, voluminous hair today.
-
-
-"""
-
-# Retrieve credentials from environment variables
+# === Environment Variables ===
 SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 DOC_ID = os.getenv("GOOGLE_DOC_ID_TOPIC")
 BLOG_PROMPT_DOC_ID = os.getenv("GOOGLE_DOC_BLOG_PROMPT_DOC_ID")
 SHEET_ID = os.getenv("GOOGLE_SHEET_ID")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-FROM_EMAIL = os.getenv("EMAIL_USERNAME")       
+FROM_EMAIL = os.getenv("EMAIL_USERNAME")
 EMAIL_APP_PASSWORD = os.getenv("EMAIL_APP_PASSWORD")
 DESIGNER_EMAIL = os.getenv("DESIGNER_EMAIL")
 HEAD_EMAIL = os.getenv("HEAD_EMAIL")
@@ -114,11 +28,8 @@ GAVARI_EMAIL = os.getenv("GAVARI_EMAIL")
 APPROVED_BLOGS_FOLDER_ID = os.getenv("APPROVED_BLOGS_FOLDER_ID")
 GIVEAWAY_DOC_ID = os.getenv("GIVEAWAY_DOC_ID")
 RESTRICTED_DOC_ID = os.getenv("RESTRICTED_DOC_ID")
-cta_agent = os.getenv("CTA_SHEET_ID")
+CTA_SHEET_ID = os.getenv("CTA_SHEET_ID")
 PRODUCT_SHEET_ID = os.getenv("PRODUCT_SHEET_ID")
-
-
-
 
 SCOPES = [
     "https://www.googleapis.com/auth/documents.readonly",
@@ -126,14 +37,13 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/spreadsheets.readonly"
 ]
+
 credentials = service_account.Credentials.from_service_account_file(
     SERVICE_ACCOUNT_FILE, scopes=SCOPES
 )
 docs_service = build("docs", "v1", credentials=credentials)
 drive_service = build("drive", "v3", credentials=credentials)
 sheets_service = build("sheets", "v4", credentials=credentials)
-
-
 
 KEYWORD_SHEETS = {
     "CLIP IN HAIR EXTENSIONS": "1Nf1WjsXyPjGP3xlxOe_lYmC0gwmmoeJPO8P3WHWjRA4",
@@ -160,8 +70,6 @@ TARGET_AUDIENCE_DOCS = {
 }
 
 ALL_CATEGORIES = [k.replace('-', ' ').replace('_', ' ').lower() for k in KEYWORD_SHEETS.keys()]
-
-app = Flask(__name__)
 
 class PromptAgent:
     def __init__(self, doc_id):
@@ -816,210 +724,49 @@ class RestrictedWordAgent:
                 print(f"⚠️ Invalid regex pattern: {pattern} – {e}")
     
         return content
+# === Main Execution Block ===
+def main():
+    try:
+        prompt_agent = PromptAgent(DOC_ID)
+        keyword_agent = KeywordAgent()
+        topic_agent = TopicAgent(OPENAI_API_KEY)
+        cta_agent = CTAAgent(CTA_SHEET_ID)
+        blog_writer = BlogWriterAgent(BLOG_PROMPT_DOC_ID)
+        giveaway_agent = GiveawayAgent(GIVEAWAY_DOC_ID)
+        restricted_agent = RestrictedWordAgent(RESTRICTED_DOC_ID)
+        email_agent = EmailAgent(FROM_EMAIL, EMAIL_APP_PASSWORD)
+        gavari_agent = GavariAgent(docs_service, drive_service, email_agent)
 
-sheet_agent = SheetAgent()
-email_agent = EmailAgent()
-blog_writer = BlogWriterAgent(BLOG_PROMPT_DOC_ID)
-gavari_agent = GavariAgent(docs_service, drive_service, email_agent)
-drive_agent = DriveAgent(drive_service, APPROVED_BLOGS_FOLDER_ID)
-giveaway_agent = GiveawayAgent(os.getenv("GIVEAWAY_DOC_ID"))
-restricted_agent = RestrictedWordAgent(RESTRICTED_DOC_ID)
+        prompt_text = prompt_agent.fetch_prompt()
+        if not prompt_text:
+            print("⚠️ No prompt found in Google Doc.")
+            return
 
-topic_context = {}
+        keyword, matched_category, extra_keywords = keyword_agent.get_random_keyword()
+        if not keyword or not matched_category:
+            print("⚠️ No keyword/category found.")
+            return
 
-@app.route("/approve", methods=["GET"])
-def approve_topic():
-    topic = request.args.get("topic")
-    if not topic:
-        return "Missing topic", 400
+        topic = topic_agent.generate_topic(prompt_text, keyword, matched_category)
+        blog_content = blog_writer.generate_blog(topic, keyword, extra_keywords, matched_category)
+        gavari_agent.send_blog_to_gavari(topic, blog_content, keyword, matched_category)
 
-    keyword, category, extra_keywords = sheet_agent.get_topic_data(topic)
+        # Compose and send approval email
+        approval_link = f"https://your-approval-url/approve?topic={quote(topic)}"
+        reject_link = f"https://your-approval-url/reject?topic={quote(topic)}"
+        approval_body = f"""
+        <p>New blog topic generated. Please review:</p>
+        <h3>{topic}</h3>
+        <p>Keyword: {keyword}</p>
+        <p>Category: {matched_category}</p>
+        <a href='{approval_link}' style='padding:10px;background:#2e86de;color:white;text-decoration:none;margin-right:10px;'>✅ Approve</a>
+        <a href='{reject_link}' style='padding:10px;background:#e74c3c;color:white;text-decoration:none;'>❌ Reject</a>
+        """
+        email_agent.send_email(HEAD_EMAIL, "Approval Needed: Blog Topic", approval_body)
+        print(f"📬 Blog topic sent for approval: {topic}")
 
-    if not keyword or not category:
-        return "Missing keyword or category in sheet", 400
-
-
-    extra_keywords = topic_context.get(topic, {}).get("extra_keywords", [])
-    blog_content = blog_writer.generate_blog(topic, keyword, extra_keywords, category)
-
-    gavari_agent.send_blog_to_gavari(topic, blog_content, keyword, category)
-
-
-
-    sheet_agent.update_blog_status(topic, "Approved")
-
-    subject = "Approved Blog Topic - Proceed with Thumbnail"
-    body = f"""
-    <p>The following blog topic has been approved:</p>
-    <h3>{topic}</h3>
-    <p><strong>Category:</strong> {category}</p>
-    <p>Please check the tracker sheet for details.</p>
-    <p>💾 Shared Google Drive Folder (for graphics):<br>
-    <a href="https://drive.google.com/drive/folders/1pmHyrIZsXO7TpcvUnRsAoMZSEX1LXgXH?usp=sharing" target="_blank">
-    https://drive.google.com/drive/folders/1pmHyrIZsXO7TpcvUnRsAoMZSEX1LXgXH?usp=sharing
-    </a></p>
-    """
-
-    email_agent.send_email(DESIGNER_EMAIL, subject, body)
-
-    return f"✅ Blog approved and email sent to designer for topic: {topic}"
-
-@app.route("/reject", methods=["GET"])
-def reject_topic():
-    topic = request.args.get("topic")
-    if not topic:
-        return "Missing topic", 400
-
-    sheet = sheet_agent.sheets_service.spreadsheets().values().get(
-        spreadsheetId=SHEET_ID,
-        range="Sheet1!A:E"
-    ).execute()
-    rows = sheet.get("values", [])
-    for i, row in enumerate(rows):
-        if row and row[0] == topic:
-            sheet_agent.sheets_service.spreadsheets().values().clear(
-                spreadsheetId=SHEET_ID,
-                range=f"Sheet1!A{i+1}:E{i+1}"
-            ).execute()
-            print(f"🗑️ Deleted row for topic: {topic}")
-            break
-
-    return f"""
-    <p>🗑️ Topic '<strong>{topic}</strong>' rejected and removed from sheet.</p>
-    <script>
-        const approveBtn = document.querySelector('a[href*="approve"]');
-        if (approveBtn) approveBtn.style.display = 'none';
-    </script>
-"""
-@app.route("/approve-gavari", methods=["GET"])
-def approve_gavari():
-    topic = request.args.get("topic")
-    category = request.args.get("category")
-    keyword = request.args.get("keyword")
-
-    if not topic or not category or not keyword:
-        return "Missing topic, keyword, or category", 400
-
-    # 1. Find the doc in Drive by title
-    doc_id = drive_agent.get_doc_id_by_title(topic)
-    if doc_id:
-        # 2. Create a folder inside the main approved blogs folder
-        blog_folder_id = drive_agent.create_blog_folder(topic)
-
-        # 3. Move the blog doc into that folder
-        drive_agent.move_doc_to_folder(doc_id, blog_folder_id)
-
-        # 4. Update status in Column D with link
-        folder_link = f"https://drive.google.com/drive/folders/{blog_folder_id}"
-        sheet_agent.update_blog_status(topic, f"Approved ✅ - {folder_link}")
-
-        # ✅ 5. Update Content_Status in Column F
-        sheet_data = sheet_agent.sheets_service.spreadsheets().values().get(
-            spreadsheetId=SHEET_ID,
-            range="Sheet1!A:A"
-        ).execute()
-        rows = sheet_data.get("values", [])
-
-        cleaned_topic = topic.strip().lower().replace('"', '')
-        row_number = None
-
-        for i, row in enumerate(rows):
-            if row and row[0].strip().lower().replace('"', '') == cleaned_topic:
-                row_number = i + 1
-                break
-
-        if row_number:
-            sheet_agent.sheets_service.spreadsheets().values().update(
-                spreadsheetId=SHEET_ID,
-                range=f"Sheet1!F{row_number}",
-                valueInputOption="RAW",
-                body={"values": [["Approved by Gauri ✅"]]}
-            ).execute()
-            print(f"🟢 Content_Status updated for topic: {topic}")
-        else:
-            print(f"⚠️ Could not find topic in sheet for updating Content_Status: {topic}")
-    else:
-        print("❌ Could not find doc to move.")
-
-    return f"<p>✅ Approved by Gauri. Blog stored in Drive and status updated.</p>"
-
-
-@app.route("/reject-gavari", methods=["GET"])
-def reject_topic_gavari():
-    topic = request.args.get("topic")
-    keyword = request.args.get("keyword")
-    category = request.args.get("category")
-    
-
-    if not topic or not keyword or not category:
-        return "Missing topic, keyword, or category", 400
-
-    extra_keywords = topic_context.get(topic, {}).get("extra_keywords", [])
-
-    # Re-generate the blog
-    blog_content = blog_writer.generate_blog(topic, keyword, extra_keywords, category)
-
-
-    # ✅ Fixed: Pass all 4 arguments now
-    gavari_agent.send_blog_to_gavari(topic, blog_content, keyword, category)
-
-    return f"""
-    <p>🔁 A new version of the blog for '<strong>{topic}</strong>' has been generated and sent to Gauri Mam.</p>
-    """
+    except Exception as e:
+        print("🔥 Error generating topic:", str(e))
 
 if __name__ == "__main__":
-    prompt_agent = PromptAgent(DOC_ID)
-    keyword_agent = KeywordAgent()
-    topic_agent = TopicAgent(OPENAI_API_KEY)
-    cta_agent = CTAAgent(os.getenv("CTA_SHEET_ID"))
-
-
-    
-
-    def generate_and_send_topic():
-        while True:
-            try:
-                prompt_text = prompt_agent.fetch_prompt()
-                if prompt_text:
-                    keyword, matched_category, extra_keywords = keyword_agent.get_random_keyword()
-                    topic = topic_agent.generate_topic(prompt_text, keyword or "", matched_category)
-
-
-                    if sheet_agent.topic_exists(topic):
-                        print(f"⚠️ Duplicate topic skipped: {topic}")
-                        continue  # don’t generate email or blog if already exists
-
-                    success = sheet_agent.add_blog_entry(topic, keyword, matched_category, extra_keywords)
-                    if not success:
-                        continue
-
-                    # Send approval email
-                    approval_link = f"http://localhost:5000/approve?topic={quote(topic)}"
-                    reject_link = f"http://localhost:5000/reject?topic={quote(topic)}"
-
-                    approval_body = f"""
-                    <p>New blog topic generated. Please review:</p>
-                    <h3>{topic}</h3>
-                    <p>Keyword: {keyword}</p>
-                    <p>Category: {matched_category}</p>
-                    <a href='{approval_link}' style='padding:10px;background:#2e86de;color:white;text-decoration:none;margin-right:10px;'>✅ Approve</a>
-                    <a href='{reject_link}' style='padding:10px;background:#e74c3c;color:white;text-decoration:none;'>❌ Reject</a>
-                    """
-
-                    email_agent.send_email(HEAD_EMAIL, "Approval Needed: Blog Topic", approval_body)
-                    print(f"📬 Blog topic sent for approval: {topic}")
-                else:
-                    print("⚠️ No prompt found in Google Doc.")
-            except Exception as e:
-                print("🔥 Error generating topic:", str(e))
-
-            time.sleep(60)
-
-
-    # Run topic generation in background
-    thread = threading.Thread(target=generate_and_send_topic)
-    thread.daemon = True
-    thread.start()
-
-    # Start Flask app
-    app.run(debug=False, port=5000)
+    main()
