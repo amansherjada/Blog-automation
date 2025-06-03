@@ -12,6 +12,7 @@ import time
 from urllib.parse import quote
 import json
 import logging
+import ast
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -23,11 +24,28 @@ BASE_URL = os.environ.get('BASE_URL', 'http://localhost:5000')
 # Load service account from environment variable
 SERVICE_ACCOUNT_JSON = os.environ.get('SERVICE_ACCOUNT_JSON')
 if SERVICE_ACCOUNT_JSON:
-    service_account_info = json.loads(SERVICE_ACCOUNT_JSON)
+    try:
+        # First try to parse as regular JSON
+        service_account_info = json.loads(SERVICE_ACCOUNT_JSON)
+    except json.JSONDecodeError:
+        # If that fails, try to unescape and parse
+        try:
+            # Handle escaped JSON (from online tools)
+            unescaped_json = SERVICE_ACCOUNT_JSON.encode().decode('unicode_escape')
+            service_account_info = json.loads(unescaped_json)
+        except:
+            # If both fail, try one more method for double-escaped strings
+            import ast
+            service_account_info = ast.literal_eval(SERVICE_ACCOUNT_JSON)
 else:
     # Fallback to file for local development
-    with open('service_account.json') as f:
-        service_account_info = json.load(f)
+    # Try both possible filenames
+    try:
+        with open('ahl-api-credential.json') as f:
+            service_account_info = json.load(f)
+    except FileNotFoundError:
+        with open('service_account.json') as f:
+            service_account_info = json.load(f)
 
 # Environment variables
 DOC_ID = os.environ.get("GOOGLE_DOC_ID_TOPIC")
